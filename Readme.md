@@ -1,24 +1,22 @@
-# AZFiles-Anomaly Demo
+# Azure Files-based ML Anomaly Detection
 
 This project is a comprehensive local end-to-end demonstration showcasing the power and flexibility of Azure Files, encompassing provisioning, real-time metrics collection, anomaly detection, and an intuitive vanilla JavaScript dashboard—all running seamlessly on your personal workstation without relying on Kubernetes or complex cloud-native stacks.
 
 ## High-Level Architecture
 
+```mermaid
+graph LR
+  A["Web Browser
+(Dashboard)"] -->|HTTPS| B["Go HTTP API
+(main.go + monitor loop)"]
+  B -->|ARM API| C["Azure Monitor
+(Metrics)"]
+  A -->|Poll every minute for JSON| B
+  CLI["CLI Commands
+(azfilesctl)"] --> B
 ```
-+-------------+           +----------------------+           +---------------+
-|             |  HTTPS    |                      |  ARM API  |               |
-| Web Browser +<--------->+ Go HTTP API (/api)   +<--------->+ Azure Monitor |
-| (Dashboard) |           | (main.go + monitor)  |           |  (Metrics)    |
-+------+------+
-       ^     |
-       |     | Poll every minute for JSON
-       v     |
-+------+------+
-|             |
-| CLI Commands|
-| (azfilesctl)|
-+-------------+
-```
+
+
 
 1. **`azfilesctl serve`** starts two concurrent components:
 
@@ -49,7 +47,7 @@ This project is a comprehensive local end-to-end demonstration showcasing the po
 ---
 
 ## Features
-
+![Screenshot from 2025-05-28 00-25-07](https://github.com/user-attachments/assets/388eeb10-c07a-4e1e-9efa-149d29e64fbd)
 * **Go CLI (`azfilesctl`)**:
 
   * **Scaffolded with Cobra**, offering `create`, `list`, `delete`, and `anomalies` commands.
@@ -203,6 +201,8 @@ done; wait
 Generates sustained bandwidth consumption spikes.
 
 Refresh the dashboard after \~1 minute to see colored alerts.
+![image](https://github.com/user-attachments/assets/ac869093-fe02-466e-af5d-a746053f6af1)
+
 
 ---
 
