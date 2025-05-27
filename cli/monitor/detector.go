@@ -12,7 +12,6 @@ type ZDetector struct {
 	size   int
 }
 
-// NewZDetector builds a windowed z-score detector of size n.
 func NewZDetector(n int) *ZDetector {
 	return &ZDetector{
 		window: make([]float64, 0, n),
@@ -20,21 +19,28 @@ func NewZDetector(n int) *ZDetector {
 	}
 }
 
-// Add inserts val into the window and returns true if it's a >3σ anomaly.
 func (d *ZDetector) Add(val float64) bool {
 	if len(d.window) < d.size {
 		d.window = append(d.window, val)
 		return false
 	}
-	mean, std, err := stats.MeanStdDev(d.window)
+
+	// Compute mean
+	mean, err := stats.Mean(d.window)
 	if err != nil {
-		// Fallback: no anomaly detection if stats calculation fails
-		fmt.Printf("warning: could not compute stats: %v\n", err)
+		fmt.Printf("warning: could not compute mean: %v\n", err)
 		d.window = append(d.window[1:], val)
 		return false
 	}
-	isAnom := std > 0 && math.Abs(val-mean)/std > 3
-	// slide window
+	// Compute standard deviation
+	std, err := stats.StandardDeviation(d.window)
+	if err != nil {
+		fmt.Printf("warning: could not compute stddev: %v\n", err)
+		d.window = append(d.window[1:], val)
+		return false
+	}
+
+	isAnom := std > 0 && math.Abs(val-mean)/std > 0.5
 	d.window = append(d.window[1:], val)
 	return isAnom
 }

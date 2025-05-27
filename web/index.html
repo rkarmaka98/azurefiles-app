@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Azure File Shares Dashboard</title>
+    <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f4f4f4; }
+    .ok    { color: green; }
+    .alert { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Azure File Shares</h1>
+  <table id="shares-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Quota (GB)</th>
+        <th>IOPS</th>
+        <th>Bandwidth (MiB/s)</th>
+        <th>Latency (ms)</th>
+        <th>Tx/s</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <script src="script.js"></script>
+</body>
+</html>
