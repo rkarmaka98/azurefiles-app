@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rkarmaka98/azurefiles-app/cli/monitor"
 	"github.com/spf13/cobra"
@@ -23,6 +25,7 @@ type ShareInfo struct {
 	Transactions float64 `json:"transactions"`
 }
 
+// shareEntry holds the parsed --shares entries.
 type shareEntry struct {
 	Name          string
 	FileServiceID string
@@ -44,7 +47,7 @@ var serveCmd = &cobra.Command{
 	Short: "Run the HTTP JSON API and anomaly monitor",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
-		go runMonitorLoop()
+		go runMonitorLoop(ctx)
 		serveAPI(ctx)
 	},
 }
@@ -69,8 +72,56 @@ func main() {
 	}
 }
 
-func runMonitorLoop() {
-	// unchanged...
+// runMonitorLoop fetches four metrics per share, detects anomalies, and populates alerts.
+func runMonitorLoop(ctx context.Context) {
+	// Parse the shareList into shareEntry structs once.
+	entries := make([]shareEntry, 0, len(shareList))
+	for _, e := range shareList {
+		parts := strings.SplitN(e, ":", 2)
+		if len(parts) == 2 {
+			entries = append(entries, shareEntry{parts[0], parts[1]})
+		} else {
+			log.Printf("skipping invalid share entry: %q", e)
+		}
+	}
+	if len(entries) == 0 {
+		log.Println("no valid shares to monitor; exiting monitor loop")
+		return
+	}
+
+	// Initialize the Monitor client and detector.
+	monClient, err := monitor.NewMetricsClient(subscriptionID)
+	if err != nil {
+		log.Fatalf("failed to create metrics client: %v", err)
+	}
+	detector := monitor.NewZDetector(20)
+
+	// Metric definitions: metricName → label for alerts.
+	metrics := []struct{ Key, Label string }{
+		{"FileShareMaxUsedIOPS", "IOPS"},
+		{"FileShareMaxUsedBandwidthMiBps", "Bandwidth MiB/s"},
+		{"SuccessE2ELatency", "Latency ms"},
+		{"Transactions", "Transactions/s"},
+	}
+
+	// Poll loop
+	for {
+		for _, se := range entries {
+			for _, m := range metrics {
+				value, err := monClient.GetMetric(ctx, se.FileServiceID, m.Key, se.Name)
+				if err != nil {
+					log.Printf("❌ %s fetch failed for %s: %v", m.Key, se.Name, err)
+					continue
+				}
+				if detector.Add(value) {
+					alert := fmt.Sprintf("%s spike (%s): %.2f", se.Name, m.Label, value)
+					alerts.Store(fmt.Sprintf("%s-%s", se.Name, m.Key), alert)
+					log.Println("🚨", alert)
+				}
+			}
+		}
+		time.Sleep(1 * time.Minute)
+	}
 }
 
 func serveAPI(ctx context.Context) {
@@ -109,9 +160,9 @@ func serveAPI(ctx context.Context) {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-// fetchShares now combines ListShares + per-share metrics.
+// fetchShares returns each share’s quota plus the latest four metrics.
 func fetchShares(ctx context.Context) ([]ShareInfo, error) {
-	// 1) get base quotas
+	// 1) Retrieve base quotas via ListShares (from list.go)
 	base, err := ListShares(ctx)
 	if err != nil {
 		return nil, err
@@ -121,33 +172,39 @@ func fetchShares(ctx context.Context) ([]ShareInfo, error) {
 		quotaMap[s.Name] = s.QuotaGB
 	}
 
-	// 2) parse shareList entries (name:fileServiceID)
+	// 2) Parse the same shareList entries
 	entries := make([]shareEntry, 0, len(shareList))
 	for _, e := range shareList {
-		p := strings.SplitN(e, ":", 2)
-		if len(p) == 2 {
-			entries = append(entries, shareEntry{p[0], p[1]})
+		parts := strings.SplitN(e, ":", 2)
+		if len(parts) == 2 {
+			entries = append(entries, shareEntry{parts[0], parts[1]})
 		}
 	}
 
-	// 3) metrics client
+	// 3) Metrics client
 	monClient, err := monitor.NewMetricsClient(subscriptionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4) assemble enriched ShareInfo
-	var out []ShareInfo
+	// 4) Build enriched ShareInfo slice
+	metrics := []struct{ Key, Label string }{
+		{"FileShareMaxUsedIOPS", "IOPS"},
+		{"FileShareMaxUsedBandwidthMiBps", "BandwidthMiB"},
+		{"SuccessE2ELatency", "LatencyMs"},
+		{"Transactions", "Transactions"},
+	}
+	out := make([]ShareInfo, 0, len(entries))
 	for _, se := range entries {
 		si := ShareInfo{
 			Name:    se.Name,
 			QuotaGB: quotaMap[se.Name],
 		}
 		// fetch each metric
-		si.IOPS, _ = monClient.GetMetric(ctx, se.FileServiceID, "FileShareMaxUsedIOPS", se.Name)
-		si.BandwidthMiB, _ = monClient.GetMetric(ctx, se.FileServiceID, "FileShareMaxUsedBandwidthMiBps", se.Name)
-		si.LatencyMs, _ = monClient.GetMetric(ctx, se.FileServiceID, "SuccessE2ELatency", se.Name)
-		si.Transactions, _ = monClient.GetMetric(ctx, se.FileServiceID, "Transactions", se.Name)
+		si.IOPS, _ = monClient.GetMetric(ctx, se.FileServiceID, metrics[0].Key, se.Name)
+		si.BandwidthMiB, _ = monClient.GetMetric(ctx, se.FileServiceID, metrics[1].Key, se.Name)
+		si.LatencyMs, _ = monClient.GetMetric(ctx, se.FileServiceID, metrics[2].Key, se.Name)
+		si.Transactions, _ = monClient.GetMetric(ctx, se.FileServiceID, metrics[3].Key, se.Name)
 		out = append(out, si)
 	}
 	return out, nil
