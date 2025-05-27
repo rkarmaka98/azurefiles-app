@@ -238,4 +238,3 @@ rm -rf /tmp/spike
 * **Containerization**: build a Docker image for `azfilesctl` and host the dashboard.
 * **Cloud Deployment**: deploy on Azure App Service or AKS for real-world usage.
 
-Enjoy this fully self-contained Azure Files anomaly monitoring demo! Feel free to extend and share your improvements.
